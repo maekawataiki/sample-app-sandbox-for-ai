@@ -1,0 +1,70 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+
+      - name: Build and push image
+        env:
+          IMAGE_URI: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker build -t "$IMAGE_URI:$IMAGE_TAG" .
+          docker push "$IMAGE_URI:$IMAGE_TAG"
+
+      - name: Verify image is in ECR
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          aws ecr describe-images \
+            --repository-name "${{ vars.ECR_REPOSITORY }}" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --region "${{ vars.AWS_REGION }}" >/dev/null
+
+      - name: Deploy to EKS
+        env:
+          IMAGE_URI: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --name "${{ vars.CLUSTER_NAME }}" --region "${{ vars.AWS_REGION }}"
+          helm upgrade --install "${{ vars.SERVICE_NAME }}" ./helm \
+            --namespace prototype \
+            --set image.repository="$IMAGE_URI" \
+            --set image.tag="$IMAGE_TAG" \
+            --set ingress.host="${{ vars.INGRESS_HOST }}" \
+            --set ingress.certificateArn="${{ vars.ACM_CERTIFICATE_ARN }}" \
+            --set ingress.cognitoUserPoolArn="${{ vars.COGNITO_USER_POOL_ARN }}" \
+            --set ingress.cognitoClientId="${{ vars.COGNITO_CLIENT_ID }}" \
+            --set ingress.cognitoUserPoolDomain="${{ vars.COGNITO_USER_POOL_DOMAIN }}" \
+            --atomic --wait --timeout 5m

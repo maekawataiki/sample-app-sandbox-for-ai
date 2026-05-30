@@ -1,0 +1,46 @@
+# --- Terraform ---
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Sensitive variable files (contains GitHub App private key, webhook secrets, etc.)
+terraform.tfvars
+*.auto.tfvars
+
+# --- Node.js / TypeScript ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Build artifacts
+function.zip
+*.zip
+
+# --- Secrets ---
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# --- Editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- CLI local config ---
+.prototype/
+.ash/ash_output/

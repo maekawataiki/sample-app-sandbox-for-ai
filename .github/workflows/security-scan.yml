@@ -1,0 +1,49 @@
+name: Security Scan (ASH)
+
+# Runs Automated Security Helper across the repository.
+# Aggregates SAST (bandit/semgrep/opengrep), IaC (checkov/cfn-nag/cdk-nag),
+# SCA (npm-audit/grype), and secret detection (detect-secrets/git-secrets).
+# Findings are surfaced as a PR comment, the GitHub Code Scanning tab (SARIF),
+# and a JUnit-style check.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly run catches newly disclosed CVEs in pinned dependencies.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  security-events: write
+
+jobs:
+  ash:
+    name: ASH
+    uses: awslabs/automated-security-helper/.github/workflows/run-ash-security-scan.yml@v3.4.0
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+      security-events: write
+    with:
+      ash-version: v3.4.0
+      ash-mode: local
+      config: .ash/.ash.yaml
+      fail-on-findings: true
+      verbose: true
+      collect-sarif-report: true
+      collect-junit-xml-report: true
+      post-pr-comment: true
+      install-grype: true
+      install-syft: true
+      install-opengrep: true
+      # Scan only changed files in PRs to keep latency down; main and the
+      # weekly schedule do a full scan.
+      changed-files-only: ${{ github.event_name == 'pull_request' }}
+      base-ref: origin/${{ github.base_ref || 'main' }}

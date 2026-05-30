@@ -1,0 +1,7 @@
+{
+  "name": "prototype-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Prototype service running on AWS Lambda behind the shared ALB",
+  "main": "src/index.js"
+}

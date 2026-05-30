@@ -1,0 +1,24 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # ALB uses target-type: ip and reaches pods directly from the load
+    # balancer ENIs. Restrict ingress to the container port only — the ALB
+    # plus Cognito auth is the gate; nothing else in the namespace should
+    # be talking to this pod.
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.service.containerPort }}
+  egress:
+    # Allow all outbound (DNS, downstream APIs, AWS SDK calls).
+    - {}
+{{- end }}

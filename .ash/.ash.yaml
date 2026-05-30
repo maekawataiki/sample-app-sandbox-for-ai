@@ -1,0 +1,66 @@
+# ASH (Automated Security Helper) configuration.
+# Docs: https://github.com/awslabs/automated-security-helper/blob/main/docs/content/docs/suppressions.md
+#
+# Suppressions document false positives only. Real findings must be fixed in
+# code, not silenced here. Each entry includes the reason a maintainer reviewed
+# and accepted the finding.
+
+global_settings:
+  suppressions:
+    # GitHub OIDC root CA SHA-1 thumbprints. These are public, well-known values
+    # published by AWS in their OIDC provider docs — not secrets.
+    - rule_id: SECRET-HEX-HIGH-ENTROPY-STRING
+      path: terraform/eks-prototype/github_oidc.tf
+      line_start: 4
+      line_end: 7
+      reason: "Public GitHub Actions OIDC root CA thumbprints, not secrets."
+
+    # ALB controller is the canonical AWS Load Balancer Controller IAM policy.
+    # iam:CreateServiceLinkedRole is conditioned on AWSServiceName=elasticloadbalancing
+    # so it can only create the ELB SLR, not arbitrary roles.
+    - rule_id: terraform.lang.security.iam.no-iam-resource-exposure.no-iam-resource-exposure
+      path: terraform/eks-prototype-platform/alb-controller.tf
+      reason: "iam:CreateServiceLinkedRole is conditioned on the ELB service principal; required by AWS LB Controller upstream policy."
+
+    # ecr:GetAuthorizationToken is required for `docker login` to ECR. There is
+    # no narrower alternative — AWS designs ECR auth this way.
+    - rule_id: terraform.lang.security.iam.no-iam-creds-exposure.no-iam-creds-exposure
+      path: terraform/eks-prototype/github_oidc.tf
+      reason: "ecr:GetAuthorizationToken is required for ECR docker login; no narrower IAM action exists."
+
+    # Public subnets need public IPs by definition. The cluster places workloads
+    # in private subnets — public subnets only host the NAT gateway and the ALB.
+    - rule_id: terraform.aws.security.aws-subnet-has-public-ip-address.aws-subnet-has-public-ip-address
+      path: terraform/eks-prototype/vpc.tf
+      reason: "Intentional: public subnets host the NAT gateway and shared ALB; pods run only in private subnets."
+
+    # The template service is a placeholder Express app. All traffic is gated by
+    # the shared ALB's authenticate-cognito action before reaching the pod, and
+    # the sample app exposes only idempotent GET routes. Adding csurf to the
+    # template would be cargo-culted boilerplate; downstream services that
+    # introduce state-changing routes are expected to add it themselves.
+    - rule_id: javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage
+      path: template-repo/src/index.js
+      reason: "Template app is behind ALB Cognito auth and exposes only GET routes; CSRF protection is the responsibility of services that add state-changing endpoints."
+
+    # EKS public endpoint stays enabled so admins can run kubectl from their
+    # workstation. Access is gated by IAM (EKS access entries) and can be
+    # narrowed via `cluster_public_access_cidrs`. The rule has no way to see
+    # the CIDR allow-list and assumes the worst.
+    - rule_id: terraform.lang.security.eks-public-endpoint-enabled.eks-public-endpoint-enabled
+      path: terraform/eks-prototype/cluster.tf
+      reason: "Admins use kubectl from their workstations; endpoint is gated by IAM access entries and `cluster_public_access_cidrs`."
+
+    # Control plane logging IS enabled (`enabled_cluster_log_types = var.cluster_log_types`).
+    # The rule's pattern only recognises a literal list and does not follow
+    # variables, so it reports a false negative.
+    - rule_id: terraform.lang.security.eks-insufficient-control-plane-logging.eks-insufficient-control-plane-logging
+      path: terraform/eks-prototype/cluster.tf
+      reason: "False positive: enabled_cluster_log_types is set via var.cluster_log_types (default api/audit/authenticator/controllerManager/scheduler); the rule does not resolve variables."
+
+    # CloudWatch log group uses AWS-managed KMS encryption (the default).
+    # A customer-managed KMS key adds ~$1/mo and operational overhead with no
+    # additional security benefit for control-plane audit logs in this setup.
+    - rule_id: terraform.aws.security.aws-cloudwatch-log-group-unencrypted.aws-cloudwatch-log-group-unencrypted
+      path: terraform/eks-prototype/cluster.tf
+      reason: "Encrypted at rest with the AWS-managed CloudWatch Logs key; CMK adoption is tracked separately."

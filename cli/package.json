@@ -1,0 +1,39 @@
+{
+  "name": "@your-org/prototype-cli",
+  "version": "0.1.0",
+  "description": "CLI for the prototype platform (multi-runtime: EKS / ECS / Lambda / Lambda+LWA)",
+  "license": "MIT-0",
+  "type": "module",
+  "bin": {
+    "prototype": "./bin/prototype.js"
+  },
+  "files": [
+    "bin/",
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1039.0",
+    "@aws-sdk/client-ecr": "^3.1039.0",
+    "@aws-sdk/client-ecs": "^3.1039.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "^3.1039.0",
+    "@aws-sdk/client-lambda": "^3.1039.0",
+    "@octokit/rest": "^22.0.1",
+    "commander": "^12.1.0",
+    "open": "^10.1.0",
+    "ora": "^8.1.0",
+    "picocolors": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
