@@ -76,7 +76,7 @@ resource "aws_eks_access_policy_association" "admin" {
 # GitHub Actions: edit access scoped to prototype namespace
 resource "aws_eks_access_entry" "github_actions" {
   cluster_name  = aws_eks_cluster.prototype.name
-  principal_arn = aws_iam_role.github_actions_ecr_push.arn
+  principal_arn = aws_iam_role.github_actions_deploy.arn
   type          = "STANDARD"
 }
 

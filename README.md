@@ -154,6 +154,31 @@ never churns resources.
 - **Admin-only user creation** — Cognito is configured with `allow_admin_create_user_only = true`. End users cannot self-register. Password policy requires 14+ chars with mixed case, digits, and symbols. MFA defaults to `OPTIONAL` (TOTP) — set `cognito_mfa_configuration = "ON"` to enforce it.
 - **Hardened service template** — Generated services run as non-root with a read-only root filesystem, drop all Linux capabilities, ship with liveness/readiness probes hitting `/healthz`, default to 2 replicas with a PodDisruptionBudget, and the GitHub Actions deploy uses `helm upgrade --atomic` so failed rollouts roll back automatically.
 
+### Known limits
+
+| Limit | Value | Workaround |
+|---|---|---|
+| Services per ALB listener | 100 (ALB rule quota) | `prototype destroy` unused services, or request a quota increase for *Rules per Application Load Balancer* |
+| Services per Cognito app client | 100 (callback URL limit) | Same as above; manually prune stale callback URLs from the client if needed |
+| Max synchronous Lambda response | ~6 MB / 15 min | Use ECS or EKS for large-payload or long-running workloads |
+| Runtimes requiring a GitHub OIDC provider | 1 per AWS account | Pass `-var "create_github_oidc_provider=false"` on every base-stack apply after the first |
+
+### Estimated cost
+
+Costs depend on which runtimes you enable and how many services run. Rough monthly figures at low traffic in `ap-northeast-1`:
+
+| Component | Approximate cost |
+|---|---|
+| EKS Auto Mode cluster (1 node) | ~$80–150/mo |
+| ECS Fargate (2 replicas × 0.25 vCPU / 512 MB) | ~$10–20/mo per service |
+| Shared ALB | ~$20/mo (fixed) + data transfer |
+| ACM certificate | Free |
+| Route53 hosted zone | $0.50/mo per zone |
+| Cognito | Free up to 50k MAU |
+| Lambda | Near-zero at low frequency (pay-per-request) |
+
+Enable only the runtimes you need. EKS has the highest fixed cost; Lambda has near-zero idle cost.
+
 ---
 
 ## Usage
@@ -194,7 +219,8 @@ Create `~/.config/prototype/config.json`:
 > - The `clusterName` / `albName` / `deployRoleArn` values are the **suffixed**
 >   names from `terraform output` — that's how the CLI follows whatever suffix a
 >   deployment used. `deployRoleArn` is optional; it defaults to
->   `…:role/github-actions-prototype-ecr-push` for the un-suffixed legacy case.
+>   `…:role/github-actions-prototype` (the EKS base stack's un-suffixed deploy
+>   role name) — ECS and Lambda runtimes should always pass it explicitly.
 > - `lambda-web` rides the same `lambda-prototype` platform as `lambda` (same
 >   `albName`), but uses a container image, so `needsEcr` is true.
 > - Older configs using the flat `clusterName` / `githubTemplateRepo` fields
@@ -477,9 +503,32 @@ above for the schema). Each runtime gets one entry in the `runtimes` map; set
 `defaultRuntime` to the one users should hit by default.
 
 ```bash
-cd terraform/<runtime>-prototype-platform
-terraform output     # cognito_user_pool_id, cognito_alb_client_id, etc.
+cd terraform/<runtime>-prototype-platform && terraform output
+cd ../<runtime>-prototype             && terraform output     # role ARN + cluster/alb name
 ```
+
+The mapping from Terraform output keys to `config.json` fields:
+
+| `config.json` field            | Terraform stack                 | Output key                          |
+|---|---|---|
+| `authClientId`                 | `<runtime>-prototype-platform`  | `cognito_cli_client_id`             |
+| `cognitoDomain`                | `<runtime>-prototype-platform`  | `cognito_user_pool_domain` + `.auth.<region>.amazoncognito.com` |
+| `cognitoUserPoolId`            | `<runtime>-prototype-platform`  | `cognito_user_pool_id`              |
+| `cognitoAlbClientId`           | `<runtime>-prototype-platform`  | `cognito_alb_client_id`             |
+| `cognitoUserPoolArn`           | `<runtime>-prototype-platform`  | `cognito_user_pool_arn`             |
+| `cognitoUserPoolDomain`        | `<runtime>-prototype-platform`  | `cognito_user_pool_domain`          |
+| `acmCertificateArn`            | `<runtime>-prototype-platform`  | `acm_certificate_arn`               |
+| `baseDomain`                   | platform stack `var.base_domain`| `prototype.<base_domain>` (or `prototype-<suffix>.<base_domain>`) |
+| `awsRegion` / `awsAccountId`   | —                               | from `aws configure`/`aws sts get-caller-identity` |
+| `githubOrg`                    | —                               | the value you passed as `github_org` |
+| `runtimes.<rt>.deployRoleArn`  | `<runtime>-prototype` (base)    | `github_actions_deploy_role_arn`    |
+| `runtimes.ecs.clusterName`     | `ecs-prototype` (base)          | `cluster_name`                      |
+| `runtimes.lambda.albName`      | `lambda-prototype` (base)       | `alb_name`                          |
+| `runtimes.lambda-web.albName`  | `lambda-prototype` (base)       | `alb_name` (shared with `lambda`)   |
+
+> The EKS runtime does not need a `clusterName` or `albName` in `config.json` —
+> the deploy pipeline discovers the cluster via `aws eks update-kubeconfig` and
+> the ALB via the `group.name: prototype` Ingress annotation.
 
 ---
 
@@ -524,6 +573,30 @@ This removes the Helm release, the Cognito callback URL, the ECR repository,
 and the GitHub repo. Pass `--keep-repo` to preserve the GitHub repo, or `-y`
 to skip the confirmation prompt.
 
+**How do I tear down the entire platform?**
+
+Destroy stacks in reverse order — platform before base, within each stack any
+services first. Run `prototype destroy` on every service before starting.
+
+```bash
+# EKS example — repeat for each runtime you installed
+cd terraform/eks-prototype-platform && terraform destroy
+cd ../eks-prototype              && terraform destroy
+
+# ECS
+cd terraform/ecs-prototype-platform && terraform destroy
+cd ../ecs-prototype                 && terraform destroy
+
+# Lambda (shared by lambda and lambda-web)
+cd terraform/lambda-prototype-platform && terraform destroy
+cd ../lambda-prototype                 && terraform destroy
+```
+
+> The GitHub OIDC provider is created by the first base stack. If you run
+> multiple runtimes, only the stack that created it will destroy it; the others
+> reference it with `create_github_oidc_provider=false` and have nothing to
+> delete. Delete the provider manually in the IAM console if needed.
+
 **`prototype init` fails with "GitHub token not found"**
 
 Run `gh auth login`, or set `GITHUB_TOKEN` to a token with the `administration` scope.
@@ -545,6 +618,73 @@ related `AUTH_ISSUER` / `AUTH_CLIENT_ID` env vars, or the equivalent fields in
 authorization grant flow. Note that the **ALB** still uses Cognito for the
 `authenticate-cognito` listener action — only the CLI's user-login flow is
 swapped.
+
+---
+
+## Troubleshooting
+
+**GitHub Actions: `Error: Not authorized to perform sts:AssumeRoleWithWebIdentity`**
+
+The OIDC trust policy restricts AssumeRole to `repo:<github_org>/<github_repo_pattern>:ref:refs/heads/main`.
+Causes:
+
+- The service repo's name doesn't match `github_repo_pattern` (default `prototype-*`).
+  Either rename the repo, or re-apply the base stack with a broader pattern.
+- The workflow is running on a branch other than `main`. The trust policy only
+  accepts `refs/heads/main` — feature branches cannot deploy.
+- The repo lives under a different GitHub org than the one in `var.github_org`.
+
+**`prototype init` fails: Cognito `LimitExceededException` on `UpdateUserPoolClient`**
+
+A Cognito app client supports up to 100 callback URLs. Once the platform has
+that many services registered, `prototype init` cannot add another. Either
+`prototype destroy` an unused service, or rotate the ALB client by manually
+pruning stale `callback_urls` (the resource has `ignore_changes = [callback_urls]`
+so Terraform will not touch them).
+
+**Deploy fails: ALB `TooManyListenerRulesException`**
+
+Each ALB listener accepts up to 100 rules (the default soft quota). Every
+`prototype init` adds one rule. Either `prototype destroy` unused services, or
+request a quota increase for `Rules per Application Load Balancer`.
+
+**`admin-create-user` succeeds but no welcome email arrives**
+
+Cognito sends invitations via SES. If the SES account is in the sandbox (every
+new AWS account starts there), Cognito can only deliver to *verified* recipient
+addresses. Either verify the recipient in SES, request SES production access,
+or create the user with `--message-action SUPPRESS` and share the temporary
+password out-of-band.
+
+**Second runtime install fails: `EntityAlreadyExists: …/token.actions.githubusercontent.com`**
+
+An AWS account can hold only one GitHub OIDC provider for a given issuer URL.
+Pass `-var "create_github_oidc_provider=false"` on every base-stack `terraform
+apply` after the first.
+
+**EKS apply fails: `the IAM principal ... has no access entry`**
+
+`cluster_admin_principal_arn` defaults to the calling identity, but EKS access
+entries reject STS session ARNs (e.g.
+`arn:aws:sts::123456789012:assumed-role/AdminRole/session`). If you apply from
+an assumed role, pass the underlying IAM role ARN explicitly:
+`-var "cluster_admin_principal_arn=arn:aws:iam::123456789012:role/AdminRole"`.
+
+**Platform stack apply fails reading `<runtime>-prototype/terraform.tfstate`**
+
+The platform stack reads the base stack's outputs via `terraform_remote_state`
+(same `state_bucket`, same workspace). Common causes:
+
+- `state_bucket` not passed (or wrong bucket name).
+- The base stack was applied in a different Terraform workspace than the
+  platform stack — they must match.
+
+**`prototype destroy` fails: Lambda function `ResourceInUseException`**
+
+The service's listener rule is still attached. The destroy flow removes ALB
+wiring before the function; if it left a rule behind, delete the matching
+listener rule by hand in the EC2 console (ALB → listener 443 → rules), then
+re-run `prototype destroy`.
 
 ---
 

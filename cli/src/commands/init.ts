@@ -409,7 +409,9 @@ export async function initCommand(
       ["COGNITO_USER_POOL_DOMAIN", userPoolDomain],
       ["RUNTIME",                  runtime],
       // Deploy role ARN — explicit so a suffixed role name flows to the pipeline.
-      ["DEPLOY_ROLE_ARN", rc.deployRoleArn ?? `arn:aws:iam::${accountId}:role/github-actions-prototype-ecr-push`],
+      // The default matches the EKS base stack's un-suffixed role name; ECS and
+      // Lambda runtimes always supply rc.deployRoleArn from their TF outputs.
+      ["DEPLOY_ROLE_ARN", rc.deployRoleArn ?? `arn:aws:iam::${accountId}:role/github-actions-prototype`],
     ];
     if (rc.clusterName) vars.push(["CLUSTER_NAME", rc.clusterName]);
     if (rc.albName)     vars.push(["ALB_NAME", rc.albName]);

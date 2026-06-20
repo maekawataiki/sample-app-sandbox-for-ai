@@ -34,7 +34,8 @@ export interface RuntimeConfig {
   needsEcr: boolean;
   // ARN of the GitHub Actions deploy role passed to the service pipeline as the
   // DEPLOY_ROLE_ARN variable. Lets the role name carry a deployment suffix.
-  // Defaults to arn:aws:iam::<account>:role/github-actions-prototype-ecr-push.
+  // Defaults to arn:aws:iam::<account>:role/github-actions-prototype (the EKS
+  // base stack's un-suffixed deploy role name).
   deployRoleArn?: string;
 }
 

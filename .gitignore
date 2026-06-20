@@ -13,7 +13,7 @@ override.tf.json
 .terraformrc
 terraform.rc
 
-# Sensitive variable files (contains GitHub App private key, webhook secrets, etc.)
+# Sensitive variable files (account IDs, domain names, other deployment-specific values)
 terraform.tfvars
 *.auto.tfvars
 

@@ -22,11 +22,11 @@ moved {
   to   = aws_iam_openid_connect_provider.github[0]
 }
 
-# Keeps the original role name at the default (empty) suffix so the existing
-# cluster's role is preserved; the suffix is appended only for extra deployments.
-# The ARN reaches the service workflow via the DEPLOY_ROLE_ARN variable.
-resource "aws_iam_role" "github_actions_ecr_push" {
-  name = "github-actions-prototype-ecr-push${local.dash}"
+# Suffix-scoped role name, aligned with the ECS/Lambda base stacks. The ARN
+# reaches the service workflow via the DEPLOY_ROLE_ARN variable set by
+# `prototype init`.
+resource "aws_iam_role" "github_actions_deploy" {
+  name = "github-actions-${local.name}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -48,9 +48,9 @@ resource "aws_iam_role" "github_actions_ecr_push" {
   })
 }
 
-resource "aws_iam_role_policy" "ecr_push" {
-  name = "ecr-push-prototype"
-  role = aws_iam_role.github_actions_ecr_push.id
+resource "aws_iam_role_policy" "deploy" {
+  name = "eks-deploy-prototype"
+  role = aws_iam_role.github_actions_deploy.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -82,6 +82,23 @@ resource "aws_iam_role_policy" "ecr_push" {
   })
 }
 
-output "github_actions_ecr_push_role_arn" {
-  value = aws_iam_role.github_actions_ecr_push.arn
+output "github_actions_deploy_role_arn" {
+  value = aws_iam_role.github_actions_deploy.arn
+}
+
+# State migration for the rename from `github_actions_ecr_push` to
+# `github_actions_deploy` (aligning with the ECS/Lambda base stacks). The IAM
+# role name itself also changed
+# (github-actions-prototype-ecr-push → github-actions-prototype), which
+# Terraform will destroy/recreate — fine on a fresh deployment. On an existing
+# deployment, the GitHub Actions OIDC trust is gone until the next apply
+# completes; re-run the failed service workflows after.
+moved {
+  from = aws_iam_role.github_actions_ecr_push
+  to   = aws_iam_role.github_actions_deploy
+}
+
+moved {
+  from = aws_iam_role_policy.ecr_push
+  to   = aws_iam_role_policy.deploy
 }
