@@ -154,6 +154,19 @@ resource "aws_iam_role_policy" "deploy" {
           "arn:aws:codeartifact:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.codeartifact_domain}/${var.codeartifact_repository}",
         ]
       },
+      {
+        # deploy.sh creates a Cedar-denied metric filter + alarm on the
+        # function's own log group at deploy time (Lambda has no shared log
+        # group Terraform can pre-provision like ECS does).
+        Sid    = "CedarAuditMetrics"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:PutMetricFilter",
+          "cloudwatch:PutMetricAlarm",
+        ]
+        Resource = "*"
+      },
     ]
   })
 }

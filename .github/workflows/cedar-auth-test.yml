@@ -1,0 +1,49 @@
+name: cedar-auth Test
+
+# Runs the @prototype/cedar-auth package's own test suite — the four templates'
+# build.yml only validates each *service's* .cedar policy syntax; nothing else
+# runs the package's unit/integration tests (alb-jwt, cedar-engine,
+# entity-builder, middleware) on push/PR.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/cedar-auth/**"
+      - ".github/workflows/cedar-auth-test.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/cedar-auth/**"
+      - ".github/workflows/cedar-auth-test.yml"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: packages/cedar-auth
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

@@ -54,3 +54,15 @@ variable "codeartifact_repository" {
   type        = string
   default     = "npm"
 }
+
+variable "cedar_denied_alarm_threshold" {
+  description = "Alarm when more than this many Cedar-denied requests occur across all services on this cluster within a 5-minute window."
+  type        = number
+  default     = 20
+}
+
+variable "alarm_sns_topic_arn" {
+  description = "SNS topic to notify when the Cedar-denied-spike alarm fires. Empty string means the alarm exists (visible in the console) but notifies no one."
+  type        = string
+  default     = ""
+}

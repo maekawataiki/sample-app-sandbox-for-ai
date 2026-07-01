@@ -95,4 +95,24 @@ else
   echo "    updated existing rule"
 fi
 
+echo "==> Ensuring Cedar audit metric filter and alarm"
+# Lambda only creates the log group on first invocation, so create it up front
+# (idempotent) or the metric filter has nothing to attach to.
+LOG_GROUP="/aws/lambda/${FUNCTION_NAME}"
+aws logs create-log-group --log-group-name "$LOG_GROUP" >/dev/null 2>&1 || true
+aws logs put-metric-filter --log-group-name "$LOG_GROUP" \
+  --filter-name "${FUNCTION_NAME}-cedar-denied" \
+  --filter-pattern '{ $.event = "cedar_authz" && $.allowed = false }' \
+  --metric-transformations \
+    "metricName=CedarAuthzDenied,metricNamespace=Prototype/CedarAuth,metricValue=1,defaultValue=0" \
+  >/dev/null
+aws cloudwatch put-metric-alarm \
+  --alarm-name "${FUNCTION_NAME}-cedar-denied-spike" \
+  --alarm-description "Cedar authorization is denying an unusual number of requests on ${FUNCTION_NAME} — check for a misconfigured policy or unauthorized access attempts." \
+  --namespace "Prototype/CedarAuth" --metric-name "CedarAuthzDenied" \
+  --statistic Sum --period 300 --evaluation-periods 1 \
+  --threshold "${CEDAR_DENIED_ALARM_THRESHOLD:-20}" --comparison-operator GreaterThanThreshold \
+  --treat-missing-data notBreaching \
+  >/dev/null
+
 echo "==> Live at https://$INGRESS_HOST"

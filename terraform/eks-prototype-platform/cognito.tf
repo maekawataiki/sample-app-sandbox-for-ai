@@ -121,13 +121,13 @@ resource "aws_cognito_user_pool_client" "cli" {
   }
 }
 
-resource "aws_cognito_user_pool_group" "admin" {
+resource "aws_cognito_user_group" "admin" {
   name         = "admin"
   user_pool_id = aws_cognito_user_pool.main.id
   description  = "Platform administrators — full access to all prototype services"
 }
 
-resource "aws_cognito_user_pool_group" "engineering" {
+resource "aws_cognito_user_group" "engineering" {
   name         = "engineering"
   user_pool_id = aws_cognito_user_pool.main.id
   description  = "Engineering team — default access group for prototype services"
