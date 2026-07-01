@@ -1,0 +1,27 @@
+namespace Prototype {
+  entity Group;
+
+  entity User in [Group] {
+    email: String,
+    sub: String,
+  };
+
+  entity Service {
+    name: String,
+  };
+
+  entity Endpoint in [Service] {
+    path: String,
+  };
+
+  action HttpGet, HttpPost, HttpPut, HttpDelete, HttpPatch appliesTo {
+    principal: User,
+    resource: Endpoint,
+    context: {
+      path: String,
+      method: String,
+      ip: String,
+      serviceName: String,
+    },
+  };
+}

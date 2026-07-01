@@ -105,7 +105,7 @@ TASKDEF=$(jq -n \
       name: "app", image: $image, essential: true,
       readonlyRootFilesystem: true, user: "1000",
       portMappings: [{containerPort: $port, protocol: "tcp"}],
-      environment: [{name: "PORT", value: ($port|tostring)}, {name: "SERVICE_NAME", value: $svc}],
+      environment: [{name: "PORT", value: ($port|tostring)}, {name: "SERVICE_NAME", value: $svc}, {name: "AWS_REGION", value: $region}],
       mountPoints: [{sourceVolume: "tmp", containerPath: "/tmp", readOnly: false}],
       logConfiguration: {logDriver: "awslogs", options: {
         "awslogs-group": $lg, "awslogs-region": $region, "awslogs-stream-prefix": $svc}}

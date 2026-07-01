@@ -25,6 +25,7 @@ echo "==> Packaging function"
 # Bundle dependencies too if they've been installed (add an `npm ci --omit=dev`
 # step to the workflow once your package.json has dependencies).
 zip -rq function.zip src package.json
+[ -d cedar ] && zip -rqg function.zip cedar || true
 [ -d node_modules ] && zip -rqg function.zip node_modules || true
 
 echo "==> Discovering shared ALB listener"

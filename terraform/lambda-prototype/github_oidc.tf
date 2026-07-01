@@ -130,6 +130,30 @@ resource "aws_iam_role_policy" "deploy" {
           StringEquals = { "iam:PassedToService" = "lambda.amazonaws.com" }
         }
       },
+      {
+        # `aws codeartifact login` exchanges an STS token for a CodeArtifact
+        # auth token — required before `npm ci` can resolve @prototype/* deps.
+        Sid      = "CodeArtifactAuth"
+        Effect   = "Allow"
+        Action   = "sts:GetServiceBearerToken"
+        Resource = "*"
+        Condition = {
+          StringEquals = { "sts:AWSServiceName" = "codeartifact.amazonaws.com" }
+        }
+      },
+      {
+        Sid    = "CodeArtifactRead"
+        Effect = "Allow"
+        Action = [
+          "codeartifact:GetAuthorizationToken",
+          "codeartifact:GetRepositoryEndpoint",
+          "codeartifact:ReadFromRepository",
+        ]
+        Resource = [
+          "arn:aws:codeartifact:${var.aws_region}:${data.aws_caller_identity.current.account_id}:domain/${var.codeartifact_domain}",
+          "arn:aws:codeartifact:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.codeartifact_domain}/${var.codeartifact_repository}",
+        ]
+      },
     ]
   })
 }

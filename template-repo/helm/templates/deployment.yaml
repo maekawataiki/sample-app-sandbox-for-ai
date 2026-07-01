@@ -24,6 +24,8 @@ spec:
               value: "{{ .Values.service.containerPort }}"
             - name: SERVICE_NAME
               value: "{{ .Release.Name }}"
+            - name: AWS_REGION
+              value: "{{ .Values.awsRegion }}"
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:

@@ -20,6 +20,7 @@ ENV AWS_LWA_READINESS_CHECK_PATH=/healthz
 COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./
 COPY src/ ./src/
+COPY cedar/ ./cedar/
 USER node
 EXPOSE 8080
 CMD ["node", "src/index.js"]

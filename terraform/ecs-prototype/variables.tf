@@ -42,3 +42,15 @@ variable "github_repo_pattern" {
   type        = string
   default     = "prototype-*"
 }
+
+variable "codeartifact_domain" {
+  description = "CodeArtifact domain hosting @prototype/* packages (see terraform/shared-registry). Grants the deploy role read access so `npm ci` can resolve them in CI."
+  type        = string
+  default     = "prototype"
+}
+
+variable "codeartifact_repository" {
+  description = "CodeArtifact repository within codeartifact_domain hosting @prototype/* packages."
+  type        = string
+  default     = "npm"
+}

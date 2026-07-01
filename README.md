@@ -18,6 +18,7 @@ prototype init my-app
 | Don't want AWS credentials in GitHub | GitHub Actions uses OIDC to assume a short-lived IAM role. No stored secrets |
 | Don't want to write a deploy pipeline | Push to `main` on the template repo and it deploys automatically |
 | Don't want to manage access control | Every service gets Cognito auth automatically. Users are managed centrally in one user pool |
+| Need fine-grained per-endpoint authorization | Drop Cedar policy files in `cedar/` — group-based rules evaluated per-request with sub-millisecond overhead and no external dependencies |
 
 ---
 
@@ -81,10 +82,12 @@ flowchart TD
 | Component | Path | Purpose |
 |---|---|---|
 | CLI | `cli/` | `prototype init` / `login` / `runtimes` / `destroy` — runtime-aware |
+| Cedar auth | `packages/cedar-auth/` | `@prototype/cedar-auth` — Cedar authorization middleware for all runtimes |
 | Template (EKS) | `template-repo/` | Service starter for EKS — Helm chart + Actions workflow |
 | Template (ECS) | `template-repo-ecs/` | Service starter for ECS Fargate — `scripts/deploy.sh` + Actions workflow |
 | Template (Lambda) | `template-repo-lambda/` | Service starter for Lambda — native handler, `scripts/deploy.sh` |
 | Template (Lambda+LWA) | `template-repo-lambda-web/` | Service starter for Lambda Web Adapter — same app as ECS/EKS, container image |
+| Terraform — shared registry | `terraform/shared-registry/` | CodeArtifact domain + npm repo for `@prototype/*` packages; apply once regardless of runtime |
 | Terraform — EKS cluster | `terraform/eks-prototype/` | VPC, EKS Auto Mode cluster, IAM roles, GitHub OIDC provider |
 | Terraform — EKS platform | `terraform/eks-prototype-platform/` | Cognito, wildcard ACM cert, Route53, ALB Controller |
 | Terraform — ECS cluster | `terraform/ecs-prototype/` | VPC, ECS Fargate cluster, task roles, GitHub OIDC provider |
@@ -152,6 +155,7 @@ never churns resources.
 - **No static AWS credentials anywhere** — GitHub Actions assumes an IAM role via OIDC. The trust policy restricts AssumeRole to the `main` branch of repos matching `<github_org>/prototype-*` (configurable via `github_repo_pattern`).
 - **Namespace-scoped EKS access** — The GitHub Actions role is granted `AmazonEKSEditPolicy` scoped to the `prototype` namespace only. It cannot touch the rest of the cluster.
 - **Admin-only user creation** — Cognito is configured with `allow_admin_create_user_only = true`. End users cannot self-register. Password policy requires 14+ chars with mixed case, digits, and symbols. MFA defaults to `OPTIONAL` (TOTP) — set `cognito_mfa_configuration = "ON"` to enforce it.
+- **Fine-grained Cedar authorization** — Every service template ships with `@prototype/cedar-auth`. Authenticated users are evaluated against Cedar policies in the service's `cedar/` directory on every request. Policies are version-controlled in Git and validated at CI time. Default behavior (no `.cedar` files) is allow-all-authenticated, matching the previous platform behavior; drop a `.cedar` file to enforce group-based rules. See [`packages/cedar-auth/README.md`](packages/cedar-auth/README.md) for policy authoring details.
 - **Hardened service template** — Generated services run as non-root with a read-only root filesystem, drop all Linux capabilities, ship with liveness/readiness probes hitting `/healthz`, default to 2 replicas with a PodDisruptionBudget, and the GitHub Actions deploy uses `helm upgrade --atomic` so failed rollouts roll back automatically.
 
 ### Known limits
@@ -346,7 +350,47 @@ terraform init \
   -backend-config="dynamodb_table=${TF_LOCK_TABLE}"
 ```
 
-### Step 2 — Pick one or more runtimes
+### Step 2 — CodeArtifact setup (internal npm registry)
+
+`@prototype/cedar-auth` (the [Cedar authorization middleware](packages/cedar-auth/README.md)
+every service template depends on) is published to an internal npm registry
+rather than the public registry. This platform uses [AWS
+CodeArtifact](https://aws.amazon.com/codeartifact/) — no extra service to run,
+IAM-native auth, pay-per-request.
+
+Apply once per account, independent of which runtimes you enable in Step 3
+(all runtimes' deploy roles reference the same domain/repository names):
+
+```bash
+cd terraform/shared-registry
+terraform init \
+  -backend-config="bucket=${TF_STATE_BUCKET}" \
+  -backend-config="dynamodb_table=${TF_LOCK_TABLE}"
+terraform apply
+```
+
+This creates the `prototype` domain, an `npm-store` repository upstream to
+the public npm registry, and an `npm` repository (where `@prototype/*`
+packages live) that falls through to `npm-store` for everything else. Each
+runtime's deploy role (`terraform/<runtime>-prototype/github_oidc.tf`) is
+granted `codeartifact:ReadFromRepository` scoped to `prototype/npm` — no
+further wiring needed once both stacks are applied.
+
+Publish the package:
+
+```bash
+cd ../../packages/cedar-auth
+aws codeartifact login --tool npm \
+  --domain prototype --domain-owner <account_id> --repository npm --region <region>
+npm run build
+npm publish
+```
+
+See [`packages/cedar-auth/README.md`](packages/cedar-auth/README.md) for
+policy authoring, local `file:` development, and republish/versioning
+guidance.
+
+### Step 3 — Pick one or more runtimes
 
 You can enable any subset of `eks` / `ecs` / `lambda` / `lambda-web`. Each
 runtime has a **base stack** (cluster / exec role / OIDC + VPC) and a
@@ -456,11 +500,11 @@ which builds a container image and creates a container-image function.
 > deployment in the account, or you want a different Cognito hosted-domain,
 > pass `-var "name_prefix=<your-prefix>"` to the platform stack.
 
-### Step 3 — Publish the template repositories
+### Step 4 — Publish the template repositories
 
-Publish only the templates for the runtimes you enabled in Step 2. Repo names
+Publish only the templates for the runtimes you enabled in Step 3. Repo names
 must match the `runtimes.<runtime>.templateRepo` value in your CLI config
-(Step 5).
+(Step 6).
 
 ```bash
 # EKS
@@ -484,7 +528,7 @@ gh repo create <ORG>/lambda-web-prototype-template --private --source=. --push
 gh api --method PATCH repos/<ORG>/lambda-web-prototype-template -f is_template=true
 ```
 
-### Step 4 — Create a Cognito user
+### Step 5 — Create a Cognito user
 
 ```bash
 aws cognito-idp admin-create-user \
@@ -495,7 +539,7 @@ aws cognito-idp admin-create-user \
   --region <region>
 ```
 
-### Step 5 — Wire up the CLI config
+### Step 6 — Wire up the CLI config
 
 Plug the Terraform outputs from each platform stack into
 `~/.config/prototype/config.json` (see [Usage → Install the CLI](#1-install-the-cli)
@@ -542,11 +586,17 @@ The mapping from Terraform output keys to `config.json` fields:
 │       ├── aws/ecs.ts            # ECS service + ALB-rule teardown
 │       ├── config.ts             # runtime resolution (runtimes map)
 │       └── auth/                 # Cognito OAuth2 PKCE flow
+├── packages/
+│   └── cedar-auth/               # @prototype/cedar-auth — Cedar authorization middleware
+│       ├── src/                  # middleware, ALB JWT verifier, Cedar engine, entity builder
+│       ├── testing/              # testAuthorize() helper for service unit tests
+│       └── cedar/                # schema + default allow-all-authenticated policy
 ├── template-repo/                # EKS service starter (Helm chart)
 ├── template-repo-ecs/            # ECS service starter (scripts/deploy.sh)
 ├── template-repo-lambda/         # Lambda service starter (native handler)
 ├── template-repo-lambda-web/     # Lambda + Web Adapter service starter (container)
 └── terraform/
+    ├── shared-registry/          # CodeArtifact domain + npm repo for @prototype/* packages
     ├── eks-prototype/            # EKS Stack 1: cluster
     ├── eks-prototype-platform/   # EKS Stack 2: Cognito, ACM, DNS, ALB Controller
     ├── ecs-prototype/            # ECS Stack 1: VPC, Fargate cluster, IAM, OIDC

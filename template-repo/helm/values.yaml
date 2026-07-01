@@ -3,6 +3,11 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
+# Region the shared ALB / platform runs in. Cedar-auth needs this to fetch the
+# ALB's JWT-signing public key (public-keys.auth.elb.<region>.amazonaws.com) —
+# EKS pods don't get AWS_REGION for free the way Lambda does.
+awsRegion: ""
+
 service:
   port: 80
   containerPort: 8080
