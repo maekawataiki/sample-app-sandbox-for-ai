@@ -62,7 +62,7 @@ resource "aws_iam_role_policy" "alb_controller" {
       {
         Effect   = "Allow"
         Action   = ["cognito-idp:DescribeUserPoolClient"]
-        Resource = aws_cognito_user_pool.main.arn
+        Resource = module.cognito.cognito_user_pool_arn
       },
       {
         Effect   = "Allow"

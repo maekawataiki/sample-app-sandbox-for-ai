@@ -60,6 +60,13 @@ describe('verifyAlbJwt', () => {
     await expect(verifyAlbJwt(token, 'ap-northeast-1')).rejects.toThrow('expired');
   });
 
+  it('rejects a token missing exp', async () => {
+    const header = { alg: 'ES256', kid: TEST_KID };
+    const payload = { sub: 'user-sub-123', email: 'user@example.com' };
+    const token = signJwt(header, payload, privateKey);
+    await expect(verifyAlbJwt(token, 'ap-northeast-1')).rejects.toThrow('missing exp');
+  });
+
   it('rejects a tampered token', async () => {
     const [h, _p, s] = makeToken().split('.');
     const tamperedPayload = Buffer.from(JSON.stringify({ sub: 'evil', exp: 9999999999 })).toString('base64url');

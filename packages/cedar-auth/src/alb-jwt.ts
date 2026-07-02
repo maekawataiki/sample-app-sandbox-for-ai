@@ -118,7 +118,10 @@ export async function verifyAlbJwt(
     throw new Error('Malformed JWT payload');
   }
 
-  if (typeof payload.exp === 'number' && payload.exp < Math.floor(Date.now() / 1000)) {
+  if (typeof payload.exp !== 'number') {
+    throw new Error('JWT missing exp claim');
+  }
+  if (payload.exp < Math.floor(Date.now() / 1000)) {
     throw new Error('JWT has expired');
   }
 

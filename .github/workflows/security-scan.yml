@@ -25,14 +25,14 @@ permissions:
 jobs:
   ash:
     name: ASH
-    uses: awslabs/automated-security-helper/.github/workflows/run-ash-security-scan.yml@v3.4.0
+    uses: awslabs/automated-security-helper/.github/workflows/run-ash-security-scan.yml@v3.5.6
     permissions:
       contents: read
       checks: write
       pull-requests: write
       security-events: write
     with:
-      ash-version: v3.4.0
+      ash-version: v3.5.6
       ash-mode: local
       config: .ash/.ash.yaml
       fail-on-findings: true
